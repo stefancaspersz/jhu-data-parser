@@ -10,14 +10,14 @@ from datetime import datetime
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
-# ('<--- Setup Logger --->')
-
+# Setup Logger
 logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-logger.info('<--- Setup S3 Bucket --->')
+logger.info('Setup S3 Bucket')
 s3bucket = "data-covid-19"
+s3path = "flat/"
 s3 = boto3.resource('s3')
 
 def fix_date_format(input_date_string):
@@ -25,10 +25,42 @@ def fix_date_format(input_date_string):
     output_date = datetime.strptime(input_date_string, date_format)
     return(output_date)
 
+def fix_record(confirmed_row, deaths_row, recovered_row):
+    combined_record = {}
+    combined_record['time_series'] = []
+    for key in confirmed_row.keys():
+        if match("^\d{1,2}/\d{1,2}/\d{2}$", key):
+            date_record = {}
+            date_record['date'] = str(fix_date_format(key))
+
+            try:
+                date_record['confirmed'] = int(confirmed_row[key])
+            except KeyError:
+                date_record['confirmed'] = 0
+
+            try:
+                date_record['deaths'] = int(deaths_row[key])
+            except KeyError:
+                date_record['deaths'] = 0
+
+            try:
+                date_record['recovered'] = int(recovered_row[key])
+            except KeyError:
+                date_record['recovered'] = 0
+
+            combined_record['time_series'].append(date_record)
+
+        elif key in ["Lat", "Long"]:
+            combined_record[key.lower()] = float(confirmed_row[key])
+
+        else:
+            combined_record[key.lower()] = confirmed_row[key]
+    return(combined_record)
+
 def fetch_data(url):
     req = Request(url)
     try: 
-        logger.info('<--- Fetch {} --->'.format(url))
+        logger.info('Fetch {}'.format(url))
         response = urlopen(req)
     except URLError as e:
         if hasattr(e, 'reason'):
@@ -39,23 +71,23 @@ def fetch_data(url):
             logger.info('Error code: ', e.code)
     return(response.read().decode('utf-8'))
 
-def store(record):
+def store_record(record):
     global s3bucket
     global s3
     objectbody = json.dumps(record)
-    if record['Province/State'] == '':
-        s3key = record['Country/Region'] + '.json'
+    if record['province/state'] == '':
+        s3key = s3path + record['country/region'] + '.json'
     else:
-        s3key = record['Country/Region'] + '-' + record['Province/State'] + '.json'
+        s3key = s3path + record['country/region'] + '-' + record['province/state'] + '.json'
     s3object = s3.Object(s3bucket, s3key)
     s3response = s3object.put(Body=objectbody)
     if s3response['ResponseMetadata']['HTTPStatusCode'] != 200:
-        logger.info('<--- ERROR --->')
+        logger.info('ERROR')
         logger.info(json.dumps(s3response, indent=4))
     else:
-        logger.info('<--- Write to S3 complete: {} {} --->'.format(record['Country/Region'],record['Province/State']))
+        logger.info('Write to S3 complete: {}-{}.json'.format(record['country/region'],record['province/state']))
 
-def main():
+def main_handler():
 
     country_lookup_url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv'
     confirmed_global_url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv'
@@ -73,9 +105,6 @@ def main():
     numrecords = 0
 
     for confirmed_row in confirmed_table:
-        combined_record = {}
-        combined_record['time_series'] = []
-
         found_deaths = False
         deaths_table = csv.DictReader(io.StringIO(deaths_reponse))
 
@@ -83,94 +112,23 @@ def main():
         
             if deaths_row['Country/Region'] == confirmed_row['Country/Region'] and deaths_row['Province/State'] == confirmed_row['Province/State']:
                 found_deaths = True
-
                 found_recovered = False
                 recovered_table = csv.DictReader(io.StringIO(recovered_reponse))
                 for recovered_row in recovered_table:
                     if recovered_row['Country/Region'] == confirmed_row['Country/Region'] and recovered_row['Province/State'] == confirmed_row['Province/State']:
                         found_recovered = True
-
-                        for key in confirmed_row.keys():
-                            if match("^\d{1,2}/\d{1,2}/\d{2}$", key):
-                                date_record = {}
-                                date_record['date'] = str(fix_date_format(key))
-
-                                try:
-                                    date_record['confirmed'] = int(confirmed_row[key])
-                                except KeyError:
-                                    date_record['confirmed'] = 0
-
-                                try:
-                                    date_record['deaths'] = int(deaths_row[key])
-                                except KeyError:
-                                    date_record['deaths'] = 0
-
-                                try:
-                                    date_record['recovered'] = int(recovered_row[key])
-                                except KeyError:
-                                    date_record['recovered'] = 0
-
-                                combined_record['time_series'].append(date_record)
-
-                            elif key in ["lat", "long"]:
-                                combined_record[key] = float(confirmed_row[key])
-
-                            else:
-                                combined_record[key] = confirmed_row[key]
+                        combined_record = fix_record(confirmed_row, deaths_row, recovered_row)
                         break
                 if not found_recovered:
-                    logger.info('NO recovered for {} {}'.format(deaths_row['Country/Region'],deaths_row['Province/State']))         
-                    for key in confirmed_row.keys():
-                        if match("^\d{1,2}/\d{1,2}/\d{2}$", key):
-                            date_record = {}
-                            date_record['date'] = str(fix_date_format(key))
-
-                            try:
-                                date_record['confirmed'] = int(confirmed_row[key])
-                            except KeyError:
-                                date_record['confirmed'] = 0
-
-                            try:
-                                date_record['deaths'] = int(deaths_row[key])
-                            except KeyError:
-                                date_record['deaths'] = 0
-
-                            date_record['recovered'] = 0
-
-                            combined_record['time_series'].append(date_record)
-
-                        elif key in ["lat", "long"]:
-                            combined_record[key] = float(confirmed_row[key])
-
-                        else:
-                            combined_record[key] = confirmed_row[key]
+                    logger.info('No recovered for {} {}'.format(deaths_row['Country/Region'],deaths_row['Province/State']))         
+                    combined_record = fix_record(confirmed_row, deaths_row, {})
                     break
                 else:
                     break
         if not found_deaths:
-            logger.info('NO deaths for {} {}'.format(deaths_row['Country/Region'],deaths_row['Province/State']))
-            for key in confirmed_row.keys():
-                if match("^\d{1,2}/\d{1,2}/\d{2}$", key):
-                    date_record = {}
-                    date_record['date'] = str(fix_date_format(key))
-
-                    try:
-                        date_record['confirmed'] = int(confirmed_row[key])
-                    except KeyError:
-                        date_record['confirmed'] = 0
-
-                    date_record['deaths'] = 0
-
-                    date_record['recovered'] = 0
-
-                    combined_record['time_series'].append(date_record)
-
-                elif key in ["lat", "long"]:
-                    combined_record[key] = float(confirmed_row[key])
-
-                else:
-                    combined_record[key] = confirmed_row[key]
-     
+            logger.info('No deaths for {} {}'.format(deaths_row['Country/Region'],deaths_row['Province/State']))
+            combined_record = fix_record(confirmed_row, {}, {})
+    
         country_table = csv.DictReader(io.StringIO(country_reponse))
         for country_row in country_table:
             found_country = False
@@ -181,10 +139,11 @@ def main():
         if not found_country:
             logger.info('No Country lookup for {}'.format(confirmed_row['Country/Region']))
 
-        store(combined_record)
+        store_record(combined_record)
         numrecords += 1
 
-    logger.info('<--- Completed: {} records --->'.format(numrecords))
+    logger.info('Completed: {} records'.format(numrecords))
 
 if __name__ == '__main__':
-    main()
+    logger.info('Running outside AWS Lambda')
+    main_handler()
