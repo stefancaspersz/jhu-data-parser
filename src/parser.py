@@ -54,18 +54,25 @@ def fetch_data(url):
             logger.info('Error code: ', e.code)
     return(response.read().decode('utf-8'))
 
-def parse_and_store(category, input_csv):
+def parse_and_store(category, input_csv, lookup_csv):
     global s3bucket
     global s3
     numrecords = 0
     recordset = csv.DictReader(io.StringIO(input_csv))
     for row in recordset:
         record = fix_record(row)
+        lookupset = csv.DictReader(io.StringIO(lookup_csv))
+        for lookup in lookupset:
+            if lookup['Country_Region'] == record['country/region']:
+                record['country-iso2'] = lookup['iso2']
+                record['country-lat'] = float(lookup['Lat'])
+                record['country-long'] = float(lookup['Long_'])
+                break
         objectbody = json.dumps(record)
         if record['province/state'] == '':
             s3key = s3path + 'type=' + category + '/' + record['country/region'] + '.json'
         else:
-            s3key = 'type=' + category + '/' + record['country/region'] + '-' + record['province/state'] + '.json'
+            s3key = s3path + 'type=' + category + '/' + record['country/region'] + '-' + record['province/state'] + '.json'
         s3object = s3.Object(s3bucket, s3key)
         s3response = s3object.put(Body=objectbody)
         if s3response['ResponseMetadata']['HTTPStatusCode'] == 200:
@@ -78,21 +85,21 @@ def parse_and_store(category, input_csv):
 
 def main_handler():
 
-    #country_lookup_url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv'
+    country_lookup_url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv'
     confirmed_global_url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv'
     deaths_global_url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv'
     recovered_global_url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv'
 
-    #country_lookup_csv = fetch_data(country_lookup_url)
+    country_lookup_csv = fetch_data(country_lookup_url)
 
     logger.info('Start Category = confirmed')
-    parse_and_store('confirmed',fetch_data(confirmed_global_url))
+    parse_and_store('confirmed',fetch_data(confirmed_global_url),country_lookup_csv)
 
     logger.info('Start Category = deaths')
-    parse_and_store('deaths',fetch_data(deaths_global_url))
+    parse_and_store('deaths',fetch_data(deaths_global_url),country_lookup_csv)
 
     logger.info('Start Category = recovered')
-    parse_and_store('recovered',fetch_data(recovered_global_url))
+    parse_and_store('recovered',fetch_data(recovered_global_url),country_lookup_csv)
 
 if __name__ == '__main__':
     logger.info('Running outside AWS Lambda')
