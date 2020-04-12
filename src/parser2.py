@@ -32,27 +32,21 @@ def fix_record(confirmed_row, deaths_row, recovered_row):
         if match("^\d{1,2}/\d{1,2}/\d{2}$", key):
             date_record = {}
             date_record['date'] = str(fix_date_format(key))
-
             try:
                 date_record['confirmed'] = int(confirmed_row[key])
             except KeyError:
                 date_record['confirmed'] = 0
-
             try:
                 date_record['deaths'] = int(deaths_row[key])
             except KeyError:
                 date_record['deaths'] = 0
-
             try:
                 date_record['recovered'] = int(recovered_row[key])
             except KeyError:
                 date_record['recovered'] = 0
-
             combined_record['time_series'].append(date_record)
-
         elif key in ["Lat", "Long"]:
             combined_record[key.lower()] = float(confirmed_row[key])
-
         else:
             combined_record[key.lower()] = confirmed_row[key]
     return(combined_record)
