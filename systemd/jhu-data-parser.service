@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the jhu-data-parser script
+
+[Service]
+Type=oneshot
+User=stefan
+ExecStart=/bin/bash -c "cd /home/stefan/projects/jhu-data-parser; /usr/bin/python3 src/parser2.py"
+StandardOutput=journal
+
+[Install]
+WantedBy=jhu-data-parser.timer
