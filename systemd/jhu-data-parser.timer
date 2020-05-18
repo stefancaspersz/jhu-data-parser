@@ -1,8 +1,8 @@
 [Unit]
-Description=Timer to run jhu-data-parser.service once at 1300 AEST every day
+Description=Timer to run jhu-data-parser.service 
 
 [Timer]
-OnCalendar=*-*-* 13:00:00
+OnCalendar=*-*-* 14:00:00
 Unit=jhu-data-parser.service
 
 [Install]
